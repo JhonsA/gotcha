@@ -59,6 +59,29 @@ fn main() {
     let package_lock_json: PackageLockJson =
         serde_json::from_str(&package_lock_json_content).expect("Error parsing package-lock.json");
 
-    println!("{:?}", package_json);
-    println!("{:?}", package_lock_json);
+    analise_package_json(&package_json.scripts);
+    analise_package_lock_json(&package_lock_json.packages);
+
+    // println!("{:?}", package_json);
+    // println!("{:?}", package_lock_json);
+}
+
+fn analise_package_json(scripts: &Option<HashMap<String, String>>) {
+    let dangerous_scripts = ["postinstall", "preinstall", "prepare"];
+
+    if let Some(scripts) = scripts {
+        for key in dangerous_scripts {
+            if let Some(script) = scripts.get(key) {
+                println!("⚠ WARNING! {} script detected: {}", key, script);
+            }
+        }
+    }
+}
+
+fn analise_package_lock_json(packages: &Option<HashMap<String, LockPackage>>) {
+    if let Some(packages) = packages {
+        for (path, pkg) in packages {
+            println!("{} -> {:?}", path, pkg.version);
+        }
+    }
 }
