@@ -29,6 +29,7 @@ struct LockPackage {
     version: Option<String>,
     resolved: Option<String>,
     integrity: Option<String>,
+    dependencies: Option<HashMap<String, String>>,
 }
 
 fn main() {
@@ -60,28 +61,71 @@ fn main() {
         serde_json::from_str(&package_lock_json_content).expect("Error parsing package-lock.json");
 
     analise_package_json(&package_json.scripts);
-    analise_package_lock_json(&package_lock_json.packages);
+    // analise_package_lock_json(&package_lock_json.packages);
 
     // println!("{:?}", package_json);
     // println!("{:?}", package_lock_json);
 }
 
 fn analise_package_json(scripts: &Option<HashMap<String, String>>) {
-    let dangerous_scripts = ["postinstall", "preinstall", "prepare"];
+    let dangerous_scripts = [
+        "postinstall",
+        "preinstall",
+        "prepare",
+        "install",
+        "prepublish",
+        "prepublishOnly",
+        "prepack",
+        "postpack",
+        "publish",
+        "postpublish",
+    ];
+
+    let dangerours_content = [
+        "curl",
+        "wget",
+        "bash -c",
+        "sh -c",
+        "powershell",
+        "invoke-webrequest",
+        "mshta",
+        "nc",
+        "node -e",
+        "python -c",
+    ];
 
     if let Some(scripts) = scripts {
-        for key in dangerous_scripts {
-            if let Some(script) = scripts.get(key) {
-                println!("⚠ WARNING! {} script detected: {}", key, script);
+        for (script_name, command_text) in scripts {
+            let lowercase_command = command_text.to_lowercase();
+            let normalized_command = lowercase_command.trim();
+            for suspicious_pattern in dangerours_content {
+                if normalized_command.contains(suspicious_pattern) {
+                    println!(
+                        "⚠ WARNING! {} script detected with suspicious command: {}",
+                        suspicious_pattern, script_name
+                    );
+                }
+            }
+
+            for suspicious_pattern in dangerous_scripts {
+                if script_name == suspicious_pattern {
+                    println!(
+                        "⚠ WARNING! {} script detected: {}",
+                        suspicious_pattern, script_name
+                    );
+                }
             }
         }
     }
 }
 
-fn analise_package_lock_json(packages: &Option<HashMap<String, LockPackage>>) {
-    if let Some(packages) = packages {
-        for (path, pkg) in packages {
-            println!("{} -> {:?}", path, pkg.version);
-        }
-    }
-}
+// fn analise_package_lock_json(packages: &Option<HashMap<String, LockPackage>>) {
+//     if let Some(packages) = packages {
+//         for (path, pkg) in packages {
+//             println!(
+//                 "{} -> {:?} {:?} {:?} {:?}",
+//                 path, pkg.version, pkg.resolved, pkg.integrity, pkg.dependencies
+//             );
+//         }
+//     }
+// }
