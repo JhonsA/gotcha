@@ -38,9 +38,41 @@ struct LockPackage {
     dependencies: Option<HashMap<String, String>>,
 }
 
+#[derive(Debug)]
+struct AnalysisResult {
+    findings: Vec<Finding>,
+}
+
+#[derive(Debug)]
+struct Finding {
+    severity: Severity,
+    kind: FindingKind,
+    target: String,
+    message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Severity {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FindingKind {
+    LifecycleHook,
+    SuspiciousCommand,
+    NonStandardSource,
+    WeakVersionSelector,
+}
+
 fn main() {
     let args = Args::parse();
     let project_path = Path::new(&args.project_path);
+
+    let mut analysis_result = AnalysisResult {
+        findings: Vec::new(),
+    };
 
     let package_json_path = project_path.join("package.json");
     if !package_json_path.exists() {
@@ -66,18 +98,38 @@ fn main() {
     // let package_lock_json: PackageLockJson =
     //     serde_json::from_str(&package_lock_json_content).expect("Error parsing package-lock.json");
 
-    analise_package_json_scripts(&package_json.scripts);
+    analise_package_json_scripts(&mut analysis_result, &package_json.scripts);
 
-    analise_package_json_dependencies("dependencies", &package_json.dependencies);
-    analise_package_json_dependencies("devDependencies", &package_json.dev_dependencies);
-    analise_package_json_dependencies("optionalDependencies", &package_json.optional_dependencies);
-    analise_package_json_dependencies("peerDependencies", &package_json.peer_dependencies);
+    analise_package_json_dependencies(
+        &mut analysis_result,
+        "dependencies",
+        &package_json.dependencies,
+    );
+    analise_package_json_dependencies(
+        &mut analysis_result,
+        "devDependencies",
+        &package_json.dev_dependencies,
+    );
+    analise_package_json_dependencies(
+        &mut analysis_result,
+        "optionalDependencies",
+        &package_json.optional_dependencies,
+    );
+    analise_package_json_dependencies(
+        &mut analysis_result,
+        "peerDependencies",
+        &package_json.peer_dependencies,
+    );
 
-    // println!("{:?}", package_json);
-    // println!("{:?}", package_lock_json);
+    for finding in &analysis_result.findings {
+        println!("{:?}", finding);
+    }
 }
 
-fn analise_package_json_scripts(scripts: &Option<HashMap<String, String>>) {
+fn analise_package_json_scripts(
+    analysis_result: &mut AnalysisResult,
+    scripts: &Option<HashMap<String, String>>,
+) {
     let dangerous_scripts = [
         "postinstall",
         "preinstall",
@@ -110,19 +162,29 @@ fn analise_package_json_scripts(scripts: &Option<HashMap<String, String>>) {
             let normalized_command = lowercase_command.trim();
             for suspicious_pattern in dangerours_content {
                 if normalized_command.contains(suspicious_pattern) {
-                    println!(
-                        "⚠ WARNING! | SCRIPT | suspicious command pattern '{}' detected in script '{}': '{}'",
-                        suspicious_pattern, script_name, command_text
-                    );
+                    analysis_result.findings.push(Finding {
+                        severity: Severity::High,
+                        kind: FindingKind::SuspiciousCommand,
+                        target: script_name.clone(),
+                        message: format!(
+                            "Suspicious command pattern '{}' detected in script '{}': '{}'",
+                            suspicious_pattern, script_name, command_text
+                        ),
+                    });
                 }
             }
 
             for suspicious_pattern in dangerous_scripts {
                 if script_name == suspicious_pattern {
-                    println!(
-                        "⚠ WARNING! | SCRIPT | lifecycle hook '{}' detected with command '{}'",
-                        script_name, command_text
-                    );
+                    analysis_result.findings.push(Finding {
+                        severity: Severity::High,
+                        kind: FindingKind::LifecycleHook,
+                        target: script_name.clone(),
+                        message: format!(
+                            "Lifecycle hook '{}' detected with command '{}'",
+                            script_name, command_text
+                        ),
+                    });
                 }
             }
         }
@@ -130,6 +192,7 @@ fn analise_package_json_scripts(scripts: &Option<HashMap<String, String>>) {
 }
 
 fn analise_package_json_dependencies(
+    analysis_result: &mut AnalysisResult,
     section_name: &str,
     dependencies: &Option<HashMap<String, String>>,
 ) {
@@ -146,19 +209,29 @@ fn analise_package_json_dependencies(
 
             for suspicious_pattern in dangerous_dependencies_origins {
                 if normalized_version.starts_with(suspicious_pattern) {
-                    println!(
-                        "⚠ WARNING! | DEPENDENCY | {} '{}' uses non-standard source matching '{}': '{}'",
-                        section_name, dependency_name, suspicious_pattern, normalized_version
-                    );
+                    analysis_result.findings.push(Finding {
+                        severity: Severity::High,
+                        kind: FindingKind::NonStandardSource,
+                        target: dependency_name.clone(),
+                        message: format!(
+                            "Dependency '{}' in section '{}' uses non-standard source matching '{}': '{}'",
+                            dependency_name, section_name, suspicious_pattern, normalized_version
+                        ),
+                    });
                 }
             }
 
             for weak_version in weak_control_versions {
                 if normalized_version.contains(weak_version) {
-                    println!(
-                        "⚠ WARNING! | DEPENDENCY | {} '{}' uses weak version selector '{}' in '{}'",
-                        section_name, dependency_name, weak_version, normalized_version
-                    );
+                    analysis_result.findings.push(Finding {
+                        severity: Severity::Medium,
+                        kind: FindingKind::WeakVersionSelector,
+                        target: dependency_name.clone(),
+                        message: format!(
+                            "Dependency '{}' in section '{}' uses weak version selector '{}' in '{}'",
+                            dependency_name, section_name, weak_version, normalized_version
+                        ),
+                    });
                 }
             }
         }
